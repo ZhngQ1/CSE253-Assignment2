@@ -1,0 +1,19 @@
+# 数据集（太大，队友自行 clone）
+POP909-Dataset/
+URMP/
+
+# 音频文件
+*.wav
+*.mp3
+
+# Task 4 checkpoints
+checkpoints_task4/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
