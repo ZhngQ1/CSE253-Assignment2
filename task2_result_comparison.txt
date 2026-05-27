@@ -1,0 +1,60 @@
+Task 2 Result Comparison
+========================
+
+Task:
+Symbolic conditioned generation: given a chord progression, generate a symbolic melody MIDI.
+
+Baseline:
+- Dataset: POP909
+- Model: GPT-style Transformer Decoder, d_model=256, 4 layers, 4 heads
+- Representation: REMI-like chord/bar/pitch/duration/timeshift tokens
+- Training: 50 epochs
+- Result: Train Loss 1.24, Val Loss 1.26, PPL about 3.5
+- Average chord-tone ratio on generated samples: 0.411
+
+Improved Version:
+- Dataset: POP909, 909/909 songs processed
+- Model: same Transformer scale, vocabulary expanded to 216 tokens
+- Training: 50 epochs
+- Result: Train Loss 0.9717, Val Loss 1.0083, PPL 2.74
+- Average chord-tone ratio on generated samples: 0.642
+
+Quantitative Improvement:
+- Val Loss improved from 1.26 to 1.0083, about 20.0% lower
+- PPL improved from about 3.5 to 2.74, about 21.7% lower
+- Average chord-tone ratio improved from 0.411 to 0.642, about 56.2% higher
+
+Baseline Generation Quality:
+- generated_melody.mid: 84 notes, 5.25 notes/bar, 0 empty bars, chord-tone ratio 0.500
+- generated_pop_classic.mid: 124 notes, 7.75 notes/bar, 2 empty bars, chord-tone ratio 0.339
+- generated_jazz_251.mid: 70 notes, 4.38 notes/bar, 1 empty bar, chord-tone ratio 0.329
+- generated_sad_ballad.mid: 143 notes, 8.94 notes/bar, 4 empty bars, chord-tone ratio 0.476
+
+Improved Generation Quality:
+- generated_melody.mid: 44 notes, 2.75 notes/bar, 0 empty bars, chord-tone ratio 0.682
+- generated_pop_classic.mid: 127 notes, 7.94 notes/bar, 0 empty bars, chord-tone ratio 0.583
+- generated_jazz_251.mid: 43 notes, 2.69 notes/bar, 0 empty bars, chord-tone ratio 0.698
+- generated_sad_ballad.mid: 81 notes, 5.06 notes/bar, 0 empty bars, chord-tone ratio 0.605
+
+Metric Interpretation:
+- Chord-tone ratio measures how many generated melody notes belong to the current chord.
+- Higher chord-tone ratio usually means better chord-melody consistency, but a ratio near 1.0 may sound too rigid because real melodies often use passing tones and neighbor tones.
+- Notes and notes/bar measure melody density, not direct quality.
+- Very low notes/bar can indicate sparse generation; very high notes/bar can indicate overly busy or cluttered melody.
+- Therefore, notes/bar should be interpreted by style. For example, ballads can naturally have fewer notes than fast pop melodies.
+
+Conclusion:
+- The improved model has much better validation performance than the baseline.
+- The average chord-tone ratio improves from 0.411 to 0.642, showing stronger conditioning on the input chord progression.
+- Some generated samples have fewer notes than the baseline, but this is not necessarily worse because notes/bar is a density metric rather than a quality metric.
+- The improved outputs remove empty bars and produce more chord-consistent melodies.
+- Overall, the improved Task 2 system remains a symbolic conditioned generation model and better satisfies the task goal: generating melodies conditioned on given chord progressions.
+
+Optimizations:
+- Used the MIDI tempo map to align chord annotations instead of assuming fixed 120 BPM.
+- Used MIDI time signatures to compute bar length instead of assuming all songs are 4/4.
+- Added Velocity tokens to the symbolic representation.
+- Added chord-tone ratio as a chord-melody consistency metric.
+- Added constrained bar-level generation: each chord-conditioned bar must generate at least 2 pitch tokens before ending.
+- Fixed MIDI export so BAR tokens advance the timeline correctly, avoiding compressed empty bars.
+- Made MIDI export more robust against overlapping same-pitch notes.
