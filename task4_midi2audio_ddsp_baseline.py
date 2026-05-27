@@ -467,6 +467,40 @@ def parse_midi_file(midi_path: str) -> List[Dict]:
         return []
 
 
+def parse_urmp_notes_txt(txt_path: str) -> List[Dict]:
+    """Parse URMP Notes_*.txt file into a list of note events.
+
+    URMP note annotation format (each line):
+        start_time(sec)  end_time(sec)  midi_pitch
+    """
+    notes = []
+    try:
+        with open(txt_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                parts = line.split()
+                if len(parts) >= 3:
+                    try:
+                        start = float(parts[0])
+                        end = float(parts[1])
+                        pitch = int(round(float(parts[2])))
+                        if end > start and 0 < pitch < 128:
+                            notes.append({
+                                'pitch': pitch,
+                                'start': start,
+                                'end': end,
+                                'velocity': 100,  # URMP txt has no velocity, use default
+                            })
+                    except ValueError:
+                        continue
+        notes.sort(key=lambda x: x['start'])
+    except Exception as e:
+        print(f"Error parsing {txt_path}: {e}")
+    return notes
+
+
 def load_audio(audio_path: str, sample_rate: int = SAMPLE_RATE,
                max_seconds: float = 300.0) -> Optional[np.ndarray]:
     """Load audio file and resample to target sample rate."""
@@ -531,26 +565,26 @@ class URMPDataset(Dataset):
 
             # Find audio files (individual separations)
             audio_files = glob.glob(os.path.join(piece_dir, 'AuSep_*.wav'))
-            midi_files = glob.glob(os.path.join(piece_dir, 'Notes_*.mid'))
+            note_files = glob.glob(os.path.join(piece_dir, 'Notes_*.txt'))
 
             # Match by instrument index
             audio_by_idx = {}
             for af in audio_files:
                 basename = os.path.basename(af)
-                # Format: AuSep_{idx}_{instrument}_{piece}.wav
+                # Format: AuSep_{idx}_{instrument}_{piece_num}_{piece_name}.wav
                 parts = basename.replace('.wav', '').split('_')
                 if len(parts) >= 2:
                     idx = parts[1]
                     audio_by_idx[idx] = af
 
-            for mf in midi_files:
-                basename = os.path.basename(mf)
-                # Format: Notes_{idx}_{instrument}_{piece}.mid
-                parts = basename.replace('.mid', '').split('_')
+            for nf in note_files:
+                basename = os.path.basename(nf)
+                # Format: Notes_{idx}_{instrument}_{piece_num}_{piece_name}.txt
+                parts = basename.replace('.txt', '').split('_')
                 if len(parts) >= 2:
                     idx = parts[1]
                     if idx in audio_by_idx:
-                        self.pairs.append((audio_by_idx[idx], mf))
+                        self.pairs.append((audio_by_idx[idx], nf))
 
     def __len__(self):
         return len(self.pairs) * 10  # 10 random segments per piece per epoch
@@ -565,8 +599,11 @@ class URMPDataset(Dataset):
             # Return silence if loading fails
             return self._empty_sample()
 
-        # Parse MIDI
-        notes = parse_midi_file(midi_path)
+        # Parse notes (URMP .txt or MIDI .mid)
+        if midi_path.endswith('.txt'):
+            notes = parse_urmp_notes_txt(midi_path)
+        else:
+            notes = parse_midi_file(midi_path)
         if not notes:
             return self._empty_sample()
 
