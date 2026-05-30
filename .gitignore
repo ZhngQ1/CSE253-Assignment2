@@ -1,6 +1,7 @@
-# 数据集（太大，队友自行 clone）
+# 数据集（太大，队友自行 clone / 下载）
 POP909-Dataset/
 URMP/
+URMP_tf/
 
 # 音频文件
 *.wav

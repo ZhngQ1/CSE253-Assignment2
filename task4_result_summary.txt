@@ -1,0 +1,76 @@
+Task 4 Result Summary
+=====================
+
+Task:
+Continuous, conditioned generation: synthesis of a symbolic input
+(MIDI-to-audio using a learned model). Given a symbolic melody (MIDI: pitch,
+velocity, timing), render a continuous audio waveform with a learned,
+differentiable synthesizer.
+
+This closes the end-to-end pipeline:
+    Chord progression
+      -> [Task 2: REMI Transformer] -> MIDI melody
+      -> [Task 4: MIDI-DDSP]        -> 16 kHz violin audio
+
+Model:
+- Simplified MIDI-DDSP (Engel et al. 2020 DDSP + Wu et al. 2022 MIDI-DDSP).
+  * MidiEncoder: per-frame (log-f0, velocity, onset) -> BiGRU -> 256-d conditioning
+  * DDSPDecoder: MLP -> {overall amplitude, 60-way harmonic distribution,
+                         65-band filtered-noise magnitudes}
+  * Differentiable synth: additive harmonic oscillator bank + filtered noise,
+    summed and peak-normalized.
+- ~0.74M parameters. Audio 16 kHz, control 250 fps (hop = 64 samples).
+- Loss: multi-scale spectral L1 (FFT sizes 64..2048, log + linear magnitude).
+
+Dataset:
+- URMP (University of Rochester Multi-modal Music Performance), VIOLIN solo.
+- Used the Magenta DDSP-preprocessed release
+  (gs://magentadata/datasets/urmp/urmp_20210324/, urmp_vn_solo_*).
+  Each record provides 16 kHz audio + 250 fps f0_hz + sample-level
+  note onsets/velocities, which map directly onto the model's f0/velocity/onset
+  conditioning -- no raw-URMP download or TensorFlow dependency needed.
+- A pure-Python TFRecord/protobuf parser (urmp_tfrecord.py) reads the records;
+  velocity/onset impulse trains (at 2x audio rate) are max-pooled onto the
+  250 fps frame grid.
+- Light subset: 7 violin recordings (~293 MB, 6 train shards + 1 extra),
+  16 random 4 s crops per recording per epoch.
+
+Training:
+- 80 epochs on CPU (the multi-scale STFT loss has no MPS kernel, so CPU was
+  ~2x faster than MPS with fallback). ~19 s/epoch, ~25 min total.
+- Adam, lr 3e-4 with cosine decay, grad-clip 1.0, batch size 4.
+- Multi-scale spectral loss: 5.73 (epoch 1) -> best val 1.3644 (epoch 79).
+  Train and val track closely throughout (no over-fitting).
+
+Verification (end-to-end on Task 2 generated_melody.mid):
+- Output: 32.5 s, 16 kHz, peak 0.90, rms 0.086.
+- On the sustained MIDI note 71 (B4 = 493.9 Hz), the synthesized spectrum
+  peaks at 494.0 Hz with harmonics at 988 / 1482 / 1976 Hz -- the learned
+  synthesizer reproduces the conditioned pitch with a rich harmonic
+  (violin-like) timbre.
+- ~7% of frames fall below -40 dB, matching the rests in the melody, i.e.
+  the model correctly silences unvoiced frames.
+
+Outputs (checkpoints_task4/):
+- best_model_urmp_vn.pt        trained violin MIDI-DDSP weights
+- continuous_conditioned.wav   Task 2 melody -> violin audio (primary deliverable)
+- continuous_conditioned.mp3   MP3 of the above (submission deliverable)
+- synth_pop_classic.wav        Task 2 pop melody -> violin audio
+- synth_sad_ballad.wav         Task 2 ballad melody -> violin audio
+- synth_jazz_251.wav           Task 2 jazz melody -> violin audio
+- vn_recon_epoch{1..80}.wav    held-out reconstructions over training
+- vn_target_ref.wav            real-violin reference for the same segment
+
+Baseline -> trained-on-real-data improvement:
+- Baseline best_model.pt was trained only on a SyntheticDataset (sine + a few
+  harmonics), so its timbre was synthetic. Training on real URMP violin gives
+  the synthesizer a learned, data-driven harmonic/noise timbre while keeping
+  the exact same architecture and the differentiable-DSP inductive bias.
+
+How to reproduce:
+    # 1. download the light violin subset (~293 MB)
+    #    (6 train shards + 1 extra + 2 test shards of urmp_vn_solo_*_unbatched)
+    gsutil cp "gs://magentadata/datasets/urmp/urmp_20210324/urmp_vn_solo_ddsp_conditioning_train_unbatched.tfrecord-0000{4}-of-00064" URMP_tf/
+    #    ... (see README for the full shard list)
+    # 2. train + auto-synthesize Task 2 melody
+    PYTORCH_ENABLE_MPS_FALLBACK=1 python task4_train_urmp.py --device cpu --epochs 80
